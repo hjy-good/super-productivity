@@ -391,6 +391,143 @@ export const selectTodayTasksForWidget = createSelector(
       }),
 );
 
+/**
+ * Widget-friendly view of the 7-day schedule ahead, for the companion
+ * "schedule" widget hosted in sp-today-widget.apk.
+ *
+ * - `tomorrow` lists incomplete tasks scheduled for (today + 1), sorted by
+ *   start time (tasks without a specific start time sort last alphabetically).
+ * - `weekLoad` is a 7-element array (offset 0 = today) of remaining time
+ *   estimates summed per day. Used to render the load bar column.
+ *
+ * A task counts toward a given day when either `dueWithTime` (preferred) or
+ * `dueDay` resolves to that day. `isDone` tasks are excluded. Load contribution
+ * is `max(0, timeEstimate - timeSpent)`; tasks without a `timeEstimate`
+ * contribute 0 to load but are still listed in the tomorrow detail section.
+ */
+export interface WidgetScheduleEvent {
+  id: string;
+  title: string;
+  startMs: number;
+  durationMs: number;
+  hasTime: boolean;
+}
+
+export interface WidgetScheduleDayLoad {
+  dayOffset: number;
+  dateStr: string;
+  weekday: number;
+  loadMs: number;
+}
+
+export interface WidgetScheduleData {
+  tomorrow: {
+    dateStr: string;
+    events: WidgetScheduleEvent[];
+  };
+  weekLoad: WidgetScheduleDayLoad[];
+}
+
+const _addDaysToDateStr = (dateStr: string, days: number): string => {
+  const [y, m, d] = dateStr.split('-').map((s) => parseInt(s, 10));
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + days);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+};
+
+const _dueWithTimeToDateStr = (ms: number): string => {
+  const date = new Date(ms);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+};
+
+export const selectScheduleWidgetData = createSelector(
+  selectTodayStr,
+  selectTaskFeatureState,
+  (todayStr, taskState): WidgetScheduleData => {
+    // Build the 7-day window: offset 0 = today, 1 = tomorrow, ... 6.
+    const windowDates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      windowDates.push(_addDaysToDateStr(todayStr, i));
+    }
+    const dateToOffset = new Map<string, number>();
+    windowDates.forEach((d, i) => dateToOffset.set(d, i));
+    const tomorrowDateStr = windowDates[1];
+
+    const loadMsByOffset = new Array<number>(7).fill(0);
+    const tomorrowEvents: WidgetScheduleEvent[] = [];
+
+    for (const id of taskState.ids as string[]) {
+      const task = taskState.entities[id];
+      if (!task || task.isDone) continue;
+
+      // Resolve the task's scheduled day. dueWithTime takes priority.
+      let scheduledDateStr: string | null = null;
+      let startMs = 0;
+      let hasTime = false;
+      if (task.dueWithTime) {
+        scheduledDateStr = _dueWithTimeToDateStr(task.dueWithTime);
+        startMs = task.dueWithTime;
+        hasTime = true;
+      } else if (task.dueDay) {
+        scheduledDateStr = task.dueDay;
+      }
+      if (!scheduledDateStr) continue;
+
+      const offset = dateToOffset.get(scheduledDateStr);
+      if (offset === undefined) continue;
+
+      const remainingMs = Math.max(
+        0,
+        (task.timeEstimate ?? 0) - (task.timeSpent ?? 0),
+      );
+      loadMsByOffset[offset] += remainingMs;
+
+      if (scheduledDateStr === tomorrowDateStr) {
+        tomorrowEvents.push({
+          id: task.id,
+          title: task.title,
+          startMs,
+          durationMs: task.timeEstimate ?? 0,
+          hasTime,
+        });
+      }
+    }
+
+    // Sort: timed events first by startMs asc, untimed events last by title.
+    tomorrowEvents.sort((a, b) => {
+      if (a.hasTime && b.hasTime) return a.startMs - b.startMs;
+      if (a.hasTime) return -1;
+      if (b.hasTime) return 1;
+      return a.title.localeCompare(b.title);
+    });
+
+    const weekLoad: WidgetScheduleDayLoad[] = windowDates.map((dateStr, i) => {
+      const [y, m, d] = dateStr.split('-').map((s) => parseInt(s, 10));
+      const date = new Date(y, m - 1, d);
+      return {
+        dayOffset: i,
+        dateStr,
+        weekday: date.getDay(),
+        loadMs: loadMsByOffset[i],
+      };
+    });
+
+    return {
+      tomorrow: {
+        dateStr: tomorrowDateStr,
+        events: tomorrowEvents,
+      },
+      weekLoad,
+    };
+  },
+);
+
 export const selectTimelineTasks = createSelector(
   selectTodayTaskIds,
   selectTaskFeatureState,

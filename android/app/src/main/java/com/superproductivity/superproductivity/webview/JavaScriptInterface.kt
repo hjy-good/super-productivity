@@ -63,11 +63,17 @@ class JavaScriptInterface(
     @JavascriptInterface
     fun saveToDb(requestId: String, key: String, value: String) {
         (activity.application as App).keyValStore.set(key, value)
-        if (key == TodayTasksProvider.KEY_TODAY_TASKS) {
-            activity.applicationContext.contentResolver.notifyChange(
-                TodayTasksProvider.CONTENT_URI,
-                null,
-            )
+        when (key) {
+            TodayTasksProvider.KEY_TODAY_TASKS ->
+                activity.applicationContext.contentResolver.notifyChange(
+                    TodayTasksProvider.CONTENT_URI,
+                    null,
+                )
+            TodayTasksProvider.KEY_SCHEDULE ->
+                activity.applicationContext.contentResolver.notifyChange(
+                    TodayTasksProvider.SCHEDULE_URI,
+                    null,
+                )
         }
         callJavaScriptFunction(FN_PREFIX + "saveToDbCallback('" + requestId + "')")
     }
