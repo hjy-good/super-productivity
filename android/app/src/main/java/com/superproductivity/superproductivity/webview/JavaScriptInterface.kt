@@ -22,6 +22,7 @@ import com.superproductivity.superproductivity.widget.ReminderDoneQueue
 import com.superproductivity.superproductivity.widget.ReminderSnoozeQueue
 import com.superproductivity.superproductivity.widget.ReminderTapQueue
 import com.superproductivity.superproductivity.widget.ShareIntentQueue
+import com.superproductivity.superproductivity.widget.TodayTasksProvider
 import com.superproductivity.superproductivity.widget.WidgetTaskQueue
 
 
@@ -62,6 +63,12 @@ class JavaScriptInterface(
     @JavascriptInterface
     fun saveToDb(requestId: String, key: String, value: String) {
         (activity.application as App).keyValStore.set(key, value)
+        if (key == TodayTasksProvider.KEY_TODAY_TASKS) {
+            activity.applicationContext.contentResolver.notifyChange(
+                TodayTasksProvider.CONTENT_URI,
+                null,
+            )
+        }
         callJavaScriptFunction(FN_PREFIX + "saveToDbCallback('" + requestId + "')")
     }
 

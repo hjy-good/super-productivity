@@ -12,6 +12,12 @@
   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+  <!-- Signature-level permission that gates access to TodayTasksProvider.
+       Only APKs signed with the same keystore (e.g. sp-today-widget) may read. -->
+  <permission
+      android:name="com.superproductivity.superproductivity.permission.READ_TODAY_TASKS"
+      android:protectionLevel="signature" />
+
   <application
     android:name=".App"
     android:allowBackup="true"
@@ -33,6 +39,14 @@
         android:name="android.support.FILE_PROVIDER_PATHS"
         android:resource="@xml/file_paths" />
     </provider>
+
+    <!-- Read-only ContentProvider that exposes today's tasks to the
+         sp-today-widget companion app for lockscreen rendering. -->
+    <provider
+      android:name=".widget.TodayTasksProvider"
+      android:authorities="com.superproductivity.superproductivity.today"
+      android:exported="true"
+      android:readPermission="com.superproductivity.superproductivity.permission.READ_TODAY_TASKS" />
 
     <!-- Set FullscreenActivity as the default launcher -->
     <activity

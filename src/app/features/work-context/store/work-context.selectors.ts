@@ -354,6 +354,43 @@ export const selectUndoneTodayTaskIds = createSelector(
   },
 );
 
+/**
+ * Widget-friendly view of today's tasks for the Android lockscreen widget.
+ * Returns both done and not-done tasks in TODAY_TAG order, joined with
+ * project name/color for display as mini-chips.
+ *
+ * Consumed by an effect that pushes JSON to the native KeyValStore; the
+ * TodayTasksProvider ContentProvider exposes it to the sp-today-widget app.
+ */
+export interface WidgetTodayTask {
+  id: string;
+  title: string;
+  isDone: boolean;
+  projectName: string;
+  projectColor: string;
+}
+
+export const selectTodayTasksForWidget = createSelector(
+  selectTodayTaskIds,
+  selectTaskEntities,
+  selectProjectFeatureState,
+  (taskIds, taskEntities, projectState): WidgetTodayTask[] =>
+    taskIds
+      .map((id) => taskEntities[id])
+      .filter((t): t is Task => !!t)
+      .map((task) => {
+        const project = task.projectId ? projectState.entities[task.projectId] : null;
+        return {
+          id: task.id,
+          title: task.title,
+          isDone: task.isDone,
+          projectName: project?.title ?? '',
+          projectColor:
+            (project?.theme as { primary?: string } | undefined)?.primary ?? '',
+        };
+      }),
+);
+
 export const selectTimelineTasks = createSelector(
   selectTodayTaskIds,
   selectTaskFeatureState,
