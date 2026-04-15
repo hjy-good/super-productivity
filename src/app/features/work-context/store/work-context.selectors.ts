@@ -418,6 +418,7 @@ export interface WidgetScheduleDayLoad {
   dateStr: string;
   weekday: number;
   loadMs: number;
+  taskCount: number;
 }
 
 export interface WidgetScheduleData {
@@ -460,6 +461,7 @@ export const selectScheduleWidgetData = createSelector(
     const tomorrowDateStr = windowDates[1];
 
     const loadMsByOffset = new Array<number>(7).fill(0);
+    const taskCountByOffset = new Array<number>(7).fill(0);
     const tomorrowEvents: WidgetScheduleEvent[] = [];
 
     for (const id of taskState.ids as string[]) {
@@ -487,6 +489,7 @@ export const selectScheduleWidgetData = createSelector(
         (task.timeEstimate ?? 0) - (task.timeSpent ?? 0),
       );
       loadMsByOffset[offset] += remainingMs;
+      taskCountByOffset[offset] += 1;
 
       if (scheduledDateStr === tomorrowDateStr) {
         tomorrowEvents.push({
@@ -515,6 +518,7 @@ export const selectScheduleWidgetData = createSelector(
         dateStr,
         weekday: date.getDay(),
         loadMs: loadMsByOffset[i],
+        taskCount: taskCountByOffset[i],
       };
     });
 
