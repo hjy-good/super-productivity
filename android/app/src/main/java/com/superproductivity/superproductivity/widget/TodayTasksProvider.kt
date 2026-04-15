@@ -44,7 +44,16 @@ class TodayTasksProvider : ContentProvider() {
         val cursor = MatrixCursor(COLUMNS)
         val ctx = context ?: return cursor
 
-        val store = (ctx.applicationContext as App).keyValStore
+        // Defensive cast: in instrumentation / test harnesses the
+        // applicationContext may not be our App subclass. Don't crash —
+        // just return an empty cursor so the widget shows its empty state.
+        val app = ctx.applicationContext as? App
+        if (app == null) {
+            Log.w(TAG, "applicationContext is not App; returning empty cursor")
+            cursor.setNotificationUri(ctx.contentResolver, uri)
+            return cursor
+        }
+        val store = app.keyValStore
         val json = store.get(KEY_TODAY_TASKS, "[]")
 
         try {
