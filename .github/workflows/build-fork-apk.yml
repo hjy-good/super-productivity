@@ -1,0 +1,133 @@
+name: Build fork APK (fdroid release)
+
+# Builds a signed fdroid-flavor release APK of this personal fork and publishes
+# it as a GitHub Release so Obtainium on the phone can auto-update from it.
+#
+# Required secrets (configured via `gh secret set`):
+#   ANDROID_KEYSTORE_BASE64      base64 of the release keystore
+#   ANDROID_KEYSTORE_PASSWORD    keystore password
+#   ANDROID_KEY_ALIAS            key alias
+#   ANDROID_KEY_PASSWORD         key password
+
+on:
+  push:
+    branches:
+      - feat/android-widget
+  workflow_dispatch:
+    inputs: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-fork-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: true
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node22-
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Decode release keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > keystore.jks
+          ls -la keystore.jks
+
+      - name: Build Angular frontend (prod web)
+        run: npm run buildFrontend:prodWeb
+
+      - name: Capacitor sync android
+        run: npm run sync:android
+
+      - name: Assemble fdroid release APK
+        working-directory: android
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RELEASE_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleFdroidRelease
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK=$(find android/app/build/outputs/apk/fdroid/release -name "*.apk" | head -n1)
+          if [ -z "$APK" ]; then
+            echo "No APK produced" >&2
+            find android/app/build/outputs -name "*.apk" >&2 || true
+            exit 1
+          fi
+          SIZE=$(du -h "$APK" | cut -f1)
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK ($SIZE)"
+
+      - name: Compute release metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +"%Y%m%d-%H%M%S")
+          TAG="fork-${DATE}-${SHORT_SHA}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +"%Y-%m-%d %H:%M UTC")" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sp-fork-fdroid-release
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --title "Fork build ${{ steps.meta.outputs.date }}" \
+            --notes "Automated fdroid-flavor release build of personal SP fork.
+
+          **Commit:** ${{ github.sha }}
+          **Branch:** ${{ github.ref_name }}
+          **APK size:** ${{ steps.apk.outputs.size }}
+          **Built:** ${{ steps.meta.outputs.date }}
+
+          Install on phone via Obtainium using this repo URL:
+          \`https://github.com/${{ github.repository }}\`" \
+            "${{ steps.apk.outputs.path }}"

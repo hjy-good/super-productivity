@@ -1,0 +1,97 @@
+name: Sync upstream (rebase feat/android-widget)
+
+# Periodically rebases feat/android-widget on top of upstream/master so the
+# fork stays current with upstream bug fixes and security patches. On success
+# the updated branch is force-pushed, which triggers build-fork-apk.yml to
+# produce a new signed APK release.
+#
+# If rebase fails (conflicts), the workflow opens a GitHub Issue so you can
+# resolve manually. It does NOT attempt a partial or unclean merge.
+
+on:
+  schedule:
+    # Every Monday 09:00 UTC (Tuesday 18:00 KST)
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs: {}
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feat/android-widget
+        uses: actions/checkout@v4
+        with:
+          ref: feat/android-widget
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "sp-fork-bot"
+          git config user.email "sp-fork-bot@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/johannesjo/super-productivity.git
+          git fetch upstream master --tags
+
+      - name: Check if rebase is needed
+        id: check
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/master)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          if [ "$BEHIND" = "0" ]; then
+            echo "Already up to date with upstream/master"
+          else
+            echo "Branch is $BEHIND commits behind upstream/master"
+          fi
+
+      - name: Rebase onto upstream/master
+        if: steps.check.outputs.behind != '0'
+        id: rebase
+        run: |
+          set +e
+          git rebase upstream/master
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "Rebase failed with conflicts"
+            git rebase --abort || true
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "status=clean" >> "$GITHUB_OUTPUT"
+
+      - name: Push rebased branch
+        if: steps.check.outputs.behind != '0' && steps.rebase.outputs.status == 'clean'
+        run: git push --force-with-lease origin feat/android-widget
+
+      - name: Open conflict issue
+        if: failure() && steps.check.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "Upstream rebase conflict ($(date -u +%Y-%m-%d))" \
+            --body "The weekly upstream rebase of \`feat/android-widget\` onto \`upstream/master\` failed due to conflicts.
+
+          Resolve manually:
+          \`\`\`bash
+          git fetch upstream master
+          git checkout feat/android-widget
+          git rebase upstream/master
+          # resolve conflicts
+          git push --force-with-lease origin feat/android-widget
+          \`\`\`
+
+          Commits behind: ${{ steps.check.outputs.behind }}
+          Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
