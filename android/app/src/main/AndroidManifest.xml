@@ -18,6 +18,13 @@
       android:name="com.superproductivity.superproductivity.permission.READ_TODAY_TASKS"
       android:protectionLevel="signature" />
 
+  <!-- Signature-level permission that gates HabitCompletionReceiver.
+       Only APKs signed with the same keystore (e.g. sp-morning-gate) may
+       send habit-completion broadcasts into SP. -->
+  <permission
+      android:name="com.superproductivity.superproductivity.permission.SEND_HABIT_COMPLETE"
+      android:protectionLevel="signature" />
+
   <application
     android:name=".App"
     android:allowBackup="true"
@@ -160,6 +167,19 @@
       android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- Accepts habit-completion broadcasts from sibling apps signed with the
+         same keystore (primarily sp-morning-gate). Gated by a signature-level
+         permission; no arbitrary app can trigger task completion. -->
+    <receiver
+      android:name=".receiver.HabitCompletionReceiver"
+      android:enabled="true"
+      android:exported="true"
+      android:permission="com.superproductivity.superproductivity.permission.SEND_HABIT_COMPLETE">
+      <intent-filter>
+        <action android:name="com.superproductivity.superproductivity.ACTION_HABIT_COMPLETE" />
       </intent-filter>
     </receiver>
 

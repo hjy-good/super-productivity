@@ -1,12 +1,20 @@
 import { inject, Injectable } from '@angular/core';
 import { createEffect } from '@ngrx/effects';
-import { tap } from 'rxjs/operators';
+import { first, tap } from 'rxjs/operators';
 import { SnackService } from '../../../core/snack/snack.service';
 import { IS_ANDROID_WEB_VIEW } from '../../../util/is-android-web-view';
 import { DroidLog } from '../../../core/log';
 import { androidInterface } from '../android-interface';
 import { TaskService } from '../../tasks/task.service';
 import { TaskAttachmentService } from '../../tasks/task-attachment/task-attachment.service';
+import { Task } from '../../tasks/task.model';
+
+interface HabitCompletionEntry {
+  title: string;
+  dateIso: string;
+  sourcePkg?: string;
+  receivedAt?: number;
+}
 
 // TODO send message to electron when current task changes here
 
@@ -73,6 +81,83 @@ export class AndroidEffects {
               }
             } catch (e) {
               DroidLog.err('Failed to process widget tasks', e);
+            }
+          }),
+        ),
+      { dispatch: false },
+    );
+
+  // Drain habit-completion queue on resume. Matches today's task by exact
+  // title and marks it done. Source: external apps (e.g. sp-morning-gate)
+  // posting to HabitCompletionReceiver via signature-permission broadcast.
+  processHabitCompletions$ =
+    IS_ANDROID_WEB_VIEW &&
+    createEffect(
+      () =>
+        androidInterface.onResume$.pipe(
+          tap(async () => {
+            const queueJson = androidInterface.getHabitCompletionQueue?.();
+            if (!queueJson) {
+              return;
+            }
+
+            let completions: HabitCompletionEntry[];
+            try {
+              const parsed = JSON.parse(queueJson);
+              completions = Array.isArray(parsed?.completions) ? parsed.completions : [];
+            } catch (e) {
+              DroidLog.err('Failed to parse habit completion queue', e);
+              return;
+            }
+
+            if (completions.length === 0) {
+              return;
+            }
+
+            const allTasks = (await this._taskService.allTasks$
+              .pipe(first())
+              .toPromise()) as Task[];
+            const todayIds = new Set(this._taskService.todayList());
+
+            let matched = 0;
+            const unmatchedTitles: string[] = [];
+
+            for (const entry of completions) {
+              const title = (entry.title ?? '').trim();
+              if (!title) continue;
+
+              const match = allTasks.find(
+                (t) =>
+                  todayIds.has(t.id) && !t.isDone && (t.title ?? '').trim() === title,
+              );
+
+              if (match) {
+                this._taskService.setDone(match.id);
+                matched++;
+                DroidLog.log('Habit completion matched', {
+                  title,
+                  id: match.id,
+                  source: entry.sourcePkg,
+                });
+              } else {
+                unmatchedTitles.push(title);
+              }
+            }
+
+            if (matched > 0) {
+              this._snackService.open({
+                type: 'SUCCESS',
+                msg:
+                  matched === 1
+                    ? `Habit checked: ${completions[0].title}`
+                    : `${matched} habits auto-checked`,
+              });
+            }
+            if (unmatchedTitles.length > 0) {
+              DroidLog.log(
+                'Habit completions without matching today task',
+                unmatchedTitles,
+              );
             }
           }),
         ),

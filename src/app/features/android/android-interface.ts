@@ -85,6 +85,10 @@ export interface AndroidInterface {
   // Widget task queue - get queued tasks from home screen widget
   getWidgetTaskQueue?(): string | null;
 
+  // Habit completion queue - get queued completions from sp-morning-gate (or
+  // any signature-matched sibling app). Drained on Angular resume.
+  getHabitCompletionQueue?(): string | null;
+
   // Startup overlay
   getStartupOverlayPartialText?(): string | null;
   hideStartupOverlay?(): void;

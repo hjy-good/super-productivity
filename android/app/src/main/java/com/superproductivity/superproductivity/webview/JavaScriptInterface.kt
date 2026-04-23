@@ -21,6 +21,7 @@ import com.superproductivity.superproductivity.service.TrackingForegroundService
 import com.superproductivity.superproductivity.widget.ReminderDoneQueue
 import com.superproductivity.superproductivity.widget.ReminderSnoozeQueue
 import com.superproductivity.superproductivity.widget.ReminderTapQueue
+import com.superproductivity.superproductivity.widget.HabitCompletionQueue
 import com.superproductivity.superproductivity.widget.ShareIntentQueue
 import com.superproductivity.superproductivity.widget.TodayTasksProvider
 import com.superproductivity.superproductivity.widget.WidgetTaskQueue
@@ -250,6 +251,19 @@ class JavaScriptInterface(
     @JavascriptInterface
     fun getWidgetTaskQueue(): String? {
         return WidgetTaskQueue.getAndClearQueue(activity)
+    }
+
+    /**
+     * Get queued habit-completion events from sp-morning-gate (or any
+     * signature-matched sibling app) and clear the queue.
+     * Returns JSON string or null if empty.
+     *
+     * Queue shape: {"completions": [{title, dateIso, sourcePkg, receivedAt}, ...]}
+     */
+    @Suppress("unused")
+    @JavascriptInterface
+    fun getHabitCompletionQueue(): String? {
+        return HabitCompletionQueue.getAndClearQueue(activity)
     }
 
     /**
