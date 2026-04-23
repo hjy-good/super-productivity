@@ -8,6 +8,8 @@ import { androidInterface } from '../android-interface';
 import { TaskService } from '../../tasks/task.service';
 import { TaskAttachmentService } from '../../tasks/task-attachment/task-attachment.service';
 import { Task } from '../../tasks/task.model';
+import { SimpleCounterService } from '../../simple-counter/simple-counter.service';
+import { SimpleCounter } from '../../simple-counter/simple-counter.model';
 
 interface HabitCompletionEntry {
   title: string;
@@ -23,6 +25,7 @@ export class AndroidEffects {
   private _snackService = inject(SnackService);
   private _taskService = inject(TaskService);
   private _taskAttachmentService = inject(TaskAttachmentService);
+  private _simpleCounterService = inject(SimpleCounterService);
 
   handleShare$ =
     IS_ANDROID_WEB_VIEW &&
@@ -118,6 +121,9 @@ export class AndroidEffects {
               .pipe(first())
               .toPromise()) as Task[];
             const todayIds = new Set(this._taskService.todayList());
+            const allCounters = (await this._simpleCounterService.simpleCounters$
+              .pipe(first())
+              .toPromise()) as SimpleCounter[];
 
             let matched = 0;
             const unmatchedTitles: string[] = [];
@@ -126,19 +132,42 @@ export class AndroidEffects {
               const title = (entry.title ?? '').trim();
               if (!title) continue;
 
-              const match = allTasks.find(
+              // 1) Match today's un-done task with identical title
+              const taskMatch = allTasks.find(
                 (t) =>
                   todayIds.has(t.id) && !t.isDone && (t.title ?? '').trim() === title,
               );
-
-              if (match) {
-                this._taskService.setDone(match.id);
-                matched++;
-                DroidLog.log('Habit completion matched', {
+              if (taskMatch) {
+                this._taskService.setDone(taskMatch.id);
+                DroidLog.log('Habit task matched', {
                   title,
-                  id: match.id,
+                  id: taskMatch.id,
                   source: entry.sourcePkg,
                 });
+              }
+
+              // 2) Match SimpleCounter (habit-tracker dashboard) with identical
+              //    title — mark today's count to 1 so the dashboard cell flips
+              //    to a checkmark. Matches run in parallel; either or both
+              //    may fire depending on the user's setup.
+              const counterMatch = allCounters.find(
+                (c) => (c.title ?? '').trim() === title,
+              );
+              if (counterMatch) {
+                this._simpleCounterService.setCounterForDate(
+                  counterMatch.id,
+                  entry.dateIso,
+                  1,
+                );
+                DroidLog.log('Habit counter matched', {
+                  title,
+                  id: counterMatch.id,
+                  source: entry.sourcePkg,
+                });
+              }
+
+              if (taskMatch || counterMatch) {
+                matched++;
               } else {
                 unmatchedTitles.push(title);
               }
@@ -155,7 +184,7 @@ export class AndroidEffects {
             }
             if (unmatchedTitles.length > 0) {
               DroidLog.log(
-                'Habit completions without matching today task',
+                'Habit completions without matching today task or counter',
                 unmatchedTitles,
               );
             }
