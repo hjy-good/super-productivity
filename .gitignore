@@ -5,6 +5,11 @@
 .env.local
 .env.*.local
 
+# signing keystores — never commit
+*.jks
+*.keystore
+/keystore.jks
+
 # auto-generated environment constants
 src/app/config/env.generated.ts
 

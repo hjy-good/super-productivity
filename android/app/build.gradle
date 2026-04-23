@@ -39,6 +39,16 @@ android {
             keyAlias System.getenv("RELEASE_KEYSTORE_ALIAS")
             keyPassword System.getenv("RELEASE_KEY_PASSWORD")
         }
+        // Debug builds are signed with the same shared keystore as
+        // sp-morning-gate so SP's signature-level SEND_HABIT_COMPLETE
+        // permission resolves across app boundaries. See
+        // sp-morning-gate/SP_INTEGRATION_SETUP.md.
+        sharedDebug{
+            storeFile file("../../keystore.jks")
+            storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            keyAlias System.getenv("RELEASE_KEYSTORE_ALIAS")
+            keyPassword System.getenv("RELEASE_KEY_PASSWORD")
+        }
     }
 
     // Configure the build types (Debug and Release)
@@ -48,6 +58,7 @@ android {
             debugConfigFields.each { key, value ->
                 buildConfigField "String", key, value.toString()
             }
+            signingConfig signingConfigs.sharedDebug
         }
         release {
             // Define each field in BuildConfig for the Release build
